@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drive-intelligence-platform"
+version = "0.1.0"
+description = "Safe AI-powered digital archivist for large file collections"
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [{ name = "Copilot" }]
+dependencies = [
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "SQLAlchemy>=2.0",
+  "typer>=0.12",
+  "loguru>=0.7",
+  "streamlit>=1.37",
+  "watchdog>=4.0",
+  "PyYAML>=6.0",
+  "Pillow>=10.4",
+  "opencv-python>=4.10",
+  "ExifRead>=3.0",
+  "PyMuPDF>=1.24",
+  "python-docx>=1.1",
+  "pandas>=2.2",
+  "openpyxl>=3.1",
+  "openai>=1.40"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "mypy>=1.11"
+]
+
+[project.scripts]
+dip = "drive_intelligence_platform.cli.main:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.mypy]
+python_version = "3.13"
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true

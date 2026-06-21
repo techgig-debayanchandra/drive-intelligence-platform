@@ -1,0 +1,9 @@
+"""SQLAlchemy base declarations."""
+
+from __future__ import annotations
+
+from sqlalchemy.orm import DeclarativeBase
+
+
+class Base(DeclarativeBase):
+    """Declarative base for all persistence models."""

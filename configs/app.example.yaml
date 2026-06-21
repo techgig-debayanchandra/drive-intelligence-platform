@@ -1,0 +1,8 @@
+app:
+  name: Drive Intelligence Platform
+  mode: read_only
+  database_path: data/drive_intelligence.sqlite3
+  max_workers: 8
+  batch_size: 1000
+  similarity_threshold: 0.92
+  openai_model: gpt-4.1-mini

@@ -1,0 +1,9 @@
+services:
+  drive-intelligence-platform:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - DIP_DATABASE_URL=sqlite:///data/drive_intelligence.sqlite3

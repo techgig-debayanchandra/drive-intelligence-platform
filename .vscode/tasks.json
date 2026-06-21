@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Streamlit App",
+			"type": "shell",
+			"command": "/Users/debayanchandra/miniconda3/envs/myenv/bin/python",
+			"args": [
+				"-m",
+				"streamlit",
+				"run",
+				"src/drive_intelligence_platform/app.py",
+				"--server.address=0.0.0.0",
+				"--server.port=8501"
+			],
+			"isBackground": true,
+			"group": "build",
+			"options": {
+				"env": {
+					"PYTHONPATH": "${workspaceFolder}/src"
+				}
+			},
+			"problemMatcher": []
+		}
+	]
+}

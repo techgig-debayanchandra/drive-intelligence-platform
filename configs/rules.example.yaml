@@ -1,0 +1,18 @@
+rules:
+  - name: learning_python_pdfs
+    when:
+      extension: .pdf
+      keywords: [python, learning]
+    then:
+      category: Learning
+      subcategory: Python
+      suggested_folder: Learning/Python
+
+  - name: drone_videos
+    when:
+      media_kind: video
+      keywords: [drone]
+    then:
+      category: Videography
+      subcategory: Drone
+      suggested_folder: Videography/Travel

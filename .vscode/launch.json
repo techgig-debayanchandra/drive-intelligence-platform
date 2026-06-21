@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Streamlit App",
+      "type": "python",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "src/drive_intelligence_platform/app.py", "--server.address=0.0.0.0", "--server.port=8501"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug CLI Init DB",
+      "type": "python",
+      "request": "launch",
+      "module": "drive_intelligence_platform.cli.main",
+      "args": ["init-db"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    }
+  ]
+}
