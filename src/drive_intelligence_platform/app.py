@@ -14,6 +14,12 @@ if str(PROJECT_SRC) not in sys.path:
 from drive_intelligence_platform.core.config import get_settings
 from drive_intelligence_platform.db.base import Base
 from drive_intelligence_platform.db.session import create_db_engine
+try:
+    from drive_intelligence_platform.ui.views import apply_bootstrap_ui
+except ImportError:
+    def apply_bootstrap_ui() -> None:
+        return
+
 from drive_intelligence_platform.ui.views import (
     render_analysis,
     render_backup_archive,
@@ -40,6 +46,7 @@ def main() -> None:
     engine = create_db_engine(settings)
     Base.metadata.create_all(engine)
     st.set_page_config(page_title=settings.app_name, layout="wide")
+    apply_bootstrap_ui()
     st.title("Drive Intelligence Platform")
     st.caption("Read only by default. Every action requires approval.")
 

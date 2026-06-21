@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import streamlit as st
@@ -23,6 +24,118 @@ from drive_intelligence_platform.services.search import SmartSearchService
 from drive_intelligence_platform.services.screenshots import ScreenshotService
 from drive_intelligence_platform.services.photo_studio import PhotoCompressionOptions, PhotoSource, PhotoStudioService
 from drive_intelligence_platform.services.video_analysis import VideoAnalyzer
+
+
+def apply_bootstrap_ui() -> None:
+    """Inject a Bootstrap-inspired visual layer for Streamlit components."""
+
+    st.markdown(
+        """
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+        <style>
+            .stApp {
+                background: linear-gradient(160deg, #f8fbff 0%, #eef4ff 45%, #f6fbf8 100%);
+            }
+            .main .block-container {
+                padding-top: 1.5rem;
+            }
+            .dip-panel {
+                background: #ffffff;
+                border: 1px solid #dbe7ff;
+                border-radius: 14px;
+                padding: 1rem;
+                box-shadow: 0 8px 24px rgba(16, 64, 128, 0.08);
+            }
+            .dip-kpi {
+                background: #ffffff;
+                border: 1px solid #dbe7ff;
+                border-radius: 12px;
+                padding: 0.75rem 1rem;
+            }
+            .dip-kpi h6 {
+                margin: 0;
+                color: #385070;
+                font-size: 0.85rem;
+                font-weight: 600;
+            }
+            .dip-kpi p {
+                margin: 0.2rem 0 0 0;
+                color: #0f1d35;
+                font-size: 1.25rem;
+                font-weight: 700;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_bootstrap_kpis(kpis: list[tuple[str, str]]) -> None:
+    """Render compact KPI cards using Bootstrap grid classes."""
+
+    cards = "".join(
+        [
+            (
+                "<div class='col-md-3 col-sm-6 mb-2'>"
+                f"<div class='dip-kpi'><h6>{title}</h6><p>{value}</p></div>"
+                "</div>"
+            )
+            for title, value in kpis
+        ]
+    )
+    st.markdown(f"<div class='container-fluid px-0'><div class='row'>{cards}</div></div>", unsafe_allow_html=True)
+
+
+def _render_organization_visuals(plan: list) -> None:
+    """Render before/after organization visuals and overall details."""
+
+    before_counter: Counter[str] = Counter()
+    after_counter: Counter[str] = Counter()
+    category_counter: Counter[str] = Counter()
+    total_bytes = 0
+    confidence_sum = 0.0
+
+    for item in plan:
+        before_counter[str(item.source.parent)] += 1
+        after_counter[str(item.destination.parent)] += 1
+        category_counter[item.recommendation.category] += 1
+        total_bytes += int(getattr(item.recommendation, "size_bytes", 0) or 0)
+        confidence_sum += float(item.recommendation.confidence)
+
+    total_files = len(plan)
+    avg_confidence = (confidence_sum / total_files) if total_files else 0.0
+
+    kpis = [
+        ("Planned Moves", f"{total_files}"),
+        ("Folders Before", f"{len(before_counter)}"),
+        ("Folders After", f"{len(after_counter)}"),
+        ("Avg Confidence", f"{avg_confidence:.2f}"),
+    ]
+    _render_bootstrap_kpis(kpis)
+
+    st.markdown("### Before vs After Folder Organization")
+    left, right = st.columns(2)
+    with left:
+        st.caption("Before (source folder distribution)")
+        st.bar_chart(dict(before_counter.most_common(12)))
+    with right:
+        st.caption("After (planned destination distribution)")
+        st.bar_chart(dict(after_counter.most_common(12)))
+
+    st.markdown("### Overall Details")
+    details_left, details_right = st.columns(2)
+    with details_left:
+        st.bar_chart(dict(category_counter))
+    with details_right:
+        st.dataframe(
+            [
+                {"metric": "Total Planned Files", "value": total_files},
+                {"metric": "Unique Source Folders", "value": len(before_counter)},
+                {"metric": "Unique Destination Folders", "value": len(after_counter)},
+                {"metric": "Average Confidence", "value": round(avg_confidence, 3)},
+                {"metric": "Planned Total Bytes", "value": total_bytes},
+            ]
+        )
 
 
 def render_dashboard(settings: AppSettings) -> None:
@@ -81,6 +194,7 @@ def render_organize_drive(settings: AppSettings) -> None:
     engine = initialize_database(settings)
     session_factory = create_session_factory(engine)
     st.subheader("Structure the Drive")
+    st.markdown("<div class='dip-panel'>Build the plan first, then review a graphical before/after layout before execution.</div>", unsafe_allow_html=True)
     source_root = Path(st.text_input("Source root", value=str(Path.home()), key="organize_source"))
     destination_root = Path(st.text_input("Destination root", value=str(Path.home() / "Drive-Organized"), key="organize_dest"))
     if st.button("Build organization plan", key="build_organization_plan"):
@@ -88,12 +202,27 @@ def render_organize_drive(settings: AppSettings) -> None:
             st.error(f"Source root does not exist: {source_root}")
         else:
             management = DriveManagementService(settings)
-            plan = management.build_organization_plan(source_root, destination_root)
+            progress_box = st.empty()
+            progress_bar = st.progress(0, text="Preparing organization plan...")
+
+            def update_plan_progress(ratio: float, message: str) -> None:
+                safe_ratio = max(0.0, min(1.0, ratio))
+                progress_bar.progress(safe_ratio, text=message)
+                progress_box.caption(message)
+
+            plan = management.build_organization_plan(
+                source_root,
+                destination_root,
+                progress_callback=update_plan_progress,
+            )
+            progress_bar.progress(1.0, text=f"Built organization plan for {len(plan)} files")
+            progress_box.caption(f"Plan ready: {len(plan)} files from {source_root}")
             st.session_state["organization_plan"] = plan
             st.success(f"Built {len(plan)} planned moves")
 
     plan = st.session_state.get("organization_plan", [])
     if plan:
+        _render_organization_visuals(plan)
         st.dataframe([
             {
                 "source": str(item.source),

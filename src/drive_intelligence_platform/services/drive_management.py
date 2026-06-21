@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import tarfile
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,15 +46,40 @@ class DriveManagementService:
         self.scanner = DriveScanner(max_workers=settings.max_workers, batch_size=settings.batch_size)
         self.classifier = ClassifierService(settings)
 
-    def build_organization_plan(self, source_root: Path, destination_root: Path) -> list[OrganizationPlanEntry]:
+    def build_organization_plan(
+        self,
+        source_root: Path,
+        destination_root: Path,
+        progress_callback: Callable[[float, str], None] | None = None,
+    ) -> list[OrganizationPlanEntry]:
         """Scan a source root and derive a move plan under a destination root."""
 
-        scan_result = self.scanner.scan([source_root])
+        def scan_progress(processed: int, total: int, current_path: Path | None) -> None:
+            if progress_callback is None:
+                return
+            if total <= 0:
+                progress_callback(0.0, "Scanning candidate files...")
+                return
+            ratio = 0.5 * (processed / total)
+            label = f"Scanning {processed}/{total} files"
+            if current_path is not None:
+                label = f"{label} - {current_path}"
+            progress_callback(ratio, label)
+
+        scan_result = self.scanner.scan([source_root], progress_callback=scan_progress if progress_callback else None)
         plan: list[OrganizationPlanEntry] = []
-        for scanned_item in scan_result.files:
+        total_files = len(scan_result.files)
+        for index, scanned_item in enumerate(scan_result.files, start=1):
             recommendation = self.classifier.classify(scanned_item)
             destination = destination_root / recommendation.suggested_folder / scanned_item.name
             plan.append(OrganizationPlanEntry(source=scanned_item.path, destination=destination, recommendation=recommendation))
+
+            if progress_callback is not None:
+                ratio = 0.5 + (0.5 * (index / total_files)) if total_files else 1.0
+                progress_callback(ratio, f"Classifying {index}/{total_files} files - {scanned_item.path}")
+
+        if progress_callback is not None:
+            progress_callback(1.0, f"Built organization plan for {len(plan)} files")
         return plan
 
     def execute_organization_plan(self, plan: list[OrganizationPlanEntry], approved: bool) -> list[OperationManifest]:
