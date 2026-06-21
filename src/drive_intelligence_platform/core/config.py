@@ -25,6 +25,8 @@ class AppSettings(BaseSettings):
     similarity_threshold: float = 0.92
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
+    ui_bootstrap_cdn: bool = True
+    ui_max_table_rows: int = 500
 
 
 @lru_cache(maxsize=1)

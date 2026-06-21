@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -26,18 +27,22 @@ from drive_intelligence_platform.services.photo_studio import PhotoCompressionOp
 from drive_intelligence_platform.services.video_analysis import VideoAnalyzer
 
 
-def apply_bootstrap_ui() -> None:
+def apply_bootstrap_ui(settings: AppSettings | None = None) -> None:
     """Inject a Bootstrap-inspired visual layer for Streamlit components."""
 
-    st.markdown(
-        """
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    bootstrap_link = ""
+    if settings is None or settings.ui_bootstrap_cdn:
+        bootstrap_link = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">'
+
+    style_markup = """
+        __BOOTSTRAP_LINK__
         <style>
             .stApp {
                 background: linear-gradient(160deg, #f8fbff 0%, #eef4ff 45%, #f6fbf8 100%);
             }
             .main .block-container {
                 padding-top: 1.5rem;
+                max-width: 1440px;
             }
             .dip-panel {
                 background: #ffffff;
@@ -64,10 +69,14 @@ def apply_bootstrap_ui() -> None:
                 font-size: 1.25rem;
                 font-weight: 700;
             }
+            .dip-subtle {
+                color: #3b4f70;
+                font-size: 0.9rem;
+            }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """.replace("__BOOTSTRAP_LINK__", bootstrap_link)
+
+    st.markdown(style_markup, unsafe_allow_html=True)
 
 
 def _render_bootstrap_kpis(kpis: list[tuple[str, str]]) -> None:
@@ -86,8 +95,9 @@ def _render_bootstrap_kpis(kpis: list[tuple[str, str]]) -> None:
     st.markdown(f"<div class='container-fluid px-0'><div class='row'>{cards}</div></div>", unsafe_allow_html=True)
 
 
-def _render_organization_visuals(plan: list) -> None:
-    """Render before/after organization visuals and overall details."""
+@st.cache_data(show_spinner=False)
+def _summarize_organization_rows(rows: tuple[tuple[str, str, str, float, int], ...]) -> dict[str, Any]:
+    """Compute heavy before/after aggregates once and reuse across reruns."""
 
     before_counter: Counter[str] = Counter()
     after_counter: Counter[str] = Counter()
@@ -95,15 +105,47 @@ def _render_organization_visuals(plan: list) -> None:
     total_bytes = 0
     confidence_sum = 0.0
 
-    for item in plan:
-        before_counter[str(item.source.parent)] += 1
-        after_counter[str(item.destination.parent)] += 1
-        category_counter[item.recommendation.category] += 1
-        total_bytes += int(getattr(item.recommendation, "size_bytes", 0) or 0)
-        confidence_sum += float(item.recommendation.confidence)
+    for source_parent, destination_parent, category, confidence, size_bytes in rows:
+        before_counter[source_parent] += 1
+        after_counter[destination_parent] += 1
+        category_counter[category] += 1
+        total_bytes += size_bytes
+        confidence_sum += confidence
 
-    total_files = len(plan)
+    total_files = len(rows)
     avg_confidence = (confidence_sum / total_files) if total_files else 0.0
+
+    return {
+        "before": before_counter,
+        "after": after_counter,
+        "categories": category_counter,
+        "total_bytes": total_bytes,
+        "avg_confidence": avg_confidence,
+        "total_files": total_files,
+    }
+
+
+def _render_organization_visuals(plan: list) -> None:
+    """Render before/after organization visuals and overall details."""
+
+    rows = tuple(
+        (
+            str(item.source.parent),
+            str(item.destination.parent),
+            item.recommendation.category,
+            float(item.recommendation.confidence),
+            int(getattr(item.recommendation, "size_bytes", 0) or 0),
+        )
+        for item in plan
+    )
+    summary = _summarize_organization_rows(rows)
+
+    before_counter: Counter[str] = summary["before"]
+    after_counter: Counter[str] = summary["after"]
+    category_counter: Counter[str] = summary["categories"]
+    total_bytes: int = summary["total_bytes"]
+    avg_confidence: float = summary["avg_confidence"]
+    total_files: int = summary["total_files"]
 
     kpis = [
         ("Planned Moves", f"{total_files}"),
@@ -194,7 +236,13 @@ def render_organize_drive(settings: AppSettings) -> None:
     engine = initialize_database(settings)
     session_factory = create_session_factory(engine)
     st.subheader("Structure the Drive")
-    st.markdown("<div class='dip-panel'>Build the plan first, then review a graphical before/after layout before execution.</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='dip-panel'>"
+        "<div><strong>Bootstrap UI enabled</strong> with optimized summaries for large plans.</div>"
+        "<div class='dip-subtle'>Build the plan first, then review a graphical before/after layout before execution.</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     source_root = Path(st.text_input("Source root", value=str(Path.home()), key="organize_source"))
     destination_root = Path(st.text_input("Destination root", value=str(Path.home() / "Drive-Organized"), key="organize_dest"))
     if st.button("Build organization plan", key="build_organization_plan"):
@@ -223,6 +271,14 @@ def render_organize_drive(settings: AppSettings) -> None:
     plan = st.session_state.get("organization_plan", [])
     if plan:
         _render_organization_visuals(plan)
+        visible_rows = st.slider(
+            "Rows to display",
+            min_value=50,
+            max_value=max(50, min(len(plan), settings.ui_max_table_rows)),
+            value=min(300, len(plan), settings.ui_max_table_rows),
+            step=50,
+            key="organization_rows_visible",
+        )
         st.dataframe([
             {
                 "source": str(item.source),
@@ -231,7 +287,7 @@ def render_organize_drive(settings: AppSettings) -> None:
                 "subcategory": item.recommendation.subcategory,
                 "confidence": item.recommendation.confidence,
             }
-            for item in plan[:500]
+            for item in plan[:visible_rows]
         ])
         approved = st.checkbox("Approved execution mode", value=False, key="approved_execution_mode")
         if st.button("Execute approved moves", key="execute_organization_plan"):

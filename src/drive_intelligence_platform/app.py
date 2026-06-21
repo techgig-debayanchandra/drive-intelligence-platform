@@ -46,7 +46,7 @@ def main() -> None:
     engine = create_db_engine(settings)
     Base.metadata.create_all(engine)
     st.set_page_config(page_title=settings.app_name, layout="wide")
-    apply_bootstrap_ui()
+    apply_bootstrap_ui(settings)
     st.title("Drive Intelligence Platform")
     st.caption("Read only by default. Every action requires approval.")
 
