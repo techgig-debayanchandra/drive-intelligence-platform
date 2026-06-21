@@ -10,7 +10,7 @@ from drive_intelligence_platform.core.config import AppSettings
 from drive_intelligence_platform.db.session import create_session_factory, initialize_database
 from drive_intelligence_platform.services.catalog import CatalogService
 from drive_intelligence_platform.services.classifier import ClassifierService
-from drive_intelligence_platform.services.drive_management import DriveManagementService, PhotoCompressionOptions, PhotoSource
+from drive_intelligence_platform.services.drive_management import DriveManagementService
 from drive_intelligence_platform.services.dashboard import DashboardService
 from drive_intelligence_platform.services.downloads import DownloadsCleanupService
 from drive_intelligence_platform.services.execution import ExecutionService
@@ -21,7 +21,7 @@ from drive_intelligence_platform.services.rollback import RollbackService
 from drive_intelligence_platform.services.scanner import DriveScanner
 from drive_intelligence_platform.services.search import SmartSearchService
 from drive_intelligence_platform.services.screenshots import ScreenshotService
-from drive_intelligence_platform.services.photo_studio import PhotoStudioService
+from drive_intelligence_platform.services.photo_studio import PhotoCompressionOptions, PhotoSource, PhotoStudioService
 from drive_intelligence_platform.services.video_analysis import VideoAnalyzer
 
 
