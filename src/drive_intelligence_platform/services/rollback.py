@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -21,9 +22,14 @@ class RollbackService:
         manifest = self.session.query(OperationManifest).filter_by(operation_id=operation_id).one_or_none()
         if manifest is None:
             return None
+        source = Path(manifest.destination_path)
+        destination = Path(manifest.before_path)
+        if source.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
         manifest.status = "rollback_ready"
         self.session.flush()
-        return Path(manifest.before_path)
+        return destination
 
     def restore_operation(self, operation_id: str) -> list[Path]:
         """Return rollback targets for an entire operation."""
@@ -31,6 +37,11 @@ class RollbackService:
         manifest = self.session.query(OperationManifest).filter_by(operation_id=operation_id).one_or_none()
         if manifest is None:
             return []
+        source = Path(manifest.destination_path)
+        destination = Path(manifest.before_path)
+        if source.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
         manifest.status = "rollback_ready"
         self.session.flush()
-        return [Path(manifest.before_path)]
+        return [destination]

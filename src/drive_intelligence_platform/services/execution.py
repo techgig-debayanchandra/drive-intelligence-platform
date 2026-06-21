@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -31,6 +32,41 @@ class ExecutionService:
 
         plan_item = ExecutionPlanItem(source=source, destination=destination, operation="move", approved=approved)
         return ExecutionPlan(operation_id=str(uuid4()), items=[plan_item])
+
+    def execute_move(self, source: Path, destination: Path, approved: bool = False) -> OperationManifest:
+        """Move a file only after approval and persist the manifest."""
+
+        plan = self.preview_move(source, destination, approved=approved)
+        if not approved:
+            return self.persist_manifest(plan)
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(destination))
+        manifest = self.persist_manifest(plan)
+        manifest.status = "completed"
+        self.session.add(manifest)
+        self.session.flush()
+        self.session.refresh(manifest)
+        self.session.expunge(manifest)
+        return manifest
+
+    def execute_delete(self, source: Path, trash_root: Path, approved: bool = False) -> OperationManifest:
+        """Move a file to an app-managed trash location for safe deletion workflow."""
+
+        trash_destination = trash_root / str(uuid4()) / source.name
+        plan = self.preview_move(source, trash_destination, approved=approved)
+        if not approved:
+            return self.persist_manifest(plan)
+
+        trash_destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(trash_destination))
+        manifest = self.persist_manifest(plan)
+        manifest.status = "completed"
+        self.session.add(manifest)
+        self.session.flush()
+        self.session.refresh(manifest)
+        self.session.expunge(manifest)
+        return manifest
 
     def persist_manifest(self, plan: ExecutionPlan) -> OperationManifest:
         """Store a rollback manifest for an approved operation."""

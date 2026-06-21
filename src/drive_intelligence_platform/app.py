@@ -16,12 +16,16 @@ from drive_intelligence_platform.db.base import Base
 from drive_intelligence_platform.db.session import create_db_engine
 from drive_intelligence_platform.ui.views import (
     render_analysis,
+    render_backup_archive,
+    render_control_center,
     render_dashboard,
     render_downloads_cleanup,
     render_duplicates,
     render_execution,
     render_file_types,
+    render_organize_drive,
     render_large_files,
+    render_photo_studio,
     render_rollback,
     render_scan,
     render_search,
@@ -41,7 +45,10 @@ def main() -> None:
 
     tabs = st.tabs([
         "Dashboard",
+        "Drive Control Center",
         "Scan",
+        "Organize Drive",
+        "Backup / Archive",
         "Analysis",
         "Duplicates",
         "Large Files",
@@ -49,6 +56,7 @@ def main() -> None:
         "Screenshots",
         "Downloads Cleanup",
         "Search",
+        "Photo Studio",
         "Execution",
         "Rollback",
     ])
@@ -56,24 +64,32 @@ def main() -> None:
     with tabs[0]:
         render_dashboard(settings)
     with tabs[1]:
-        render_scan(settings)
+        render_control_center(settings)
     with tabs[2]:
-        render_analysis(settings)
+        render_scan(settings)
     with tabs[3]:
-        render_duplicates(settings)
+        render_organize_drive(settings)
     with tabs[4]:
-        render_large_files(settings)
+        render_backup_archive(settings)
     with tabs[5]:
-        render_file_types(settings)
+        render_analysis(settings)
     with tabs[6]:
-        render_screenshots(settings)
+        render_duplicates(settings)
     with tabs[7]:
-        render_downloads_cleanup(settings)
+        render_large_files(settings)
     with tabs[8]:
-        render_search(settings)
+        render_file_types(settings)
     with tabs[9]:
-        render_execution(settings)
+        render_screenshots(settings)
     with tabs[10]:
+        render_downloads_cleanup(settings)
+    with tabs[11]:
+        render_search(settings)
+    with tabs[12]:
+        render_photo_studio(settings)
+    with tabs[13]:
+        render_execution(settings)
+    with tabs[14]:
         render_rollback(settings)
 
 
