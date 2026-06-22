@@ -34,6 +34,33 @@ class _FakeClassifier:
         )
 
 
+class _FakeFolderAIService:
+    def recommend_folder_group(self, files, context):  # noqa: ANN001, ANN201
+        return {
+            "preserve_folder": False,
+            "suggested_folder": "Projects/Acme",
+            "reason": "Folder looks like an Acme project bundle",
+            "confidence": 0.97,
+            "category": "Project",
+            "subcategory": "Acme",
+        }
+
+
+class _FakeClassifierWithFolderAI:
+    def __init__(self) -> None:
+        self.ai_service = _FakeFolderAIService()
+
+    def classify(self, file_item: ScannedFile) -> RecommendationPayload:
+        return RecommendationPayload(
+            source_path=file_item.path,
+            category="General",
+            subcategory="",
+            suggested_folder=Path("General"),
+            reason="Base classifier",
+            confidence=0.95,
+        )
+
+
 def test_build_plan_preserves_mixed_folder_context(tmp_path: Path) -> None:
     source_root = tmp_path / "source"
     source_root.mkdir(parents=True)
@@ -122,3 +149,46 @@ def test_low_confidence_moves_are_preserved_for_safety(tmp_path: Path) -> None:
     for entry in plan:
         assert str(entry.destination).startswith(str(destination_root / "GeneralDocs"))
         assert "Preserved" in entry.recommendation.reason
+
+
+def test_folder_level_ai_batches_and_overrides_target(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir(parents=True)
+    folder = source_root / "acme_bundle"
+    folder.mkdir(parents=True)
+
+    files = [
+        ScannedFile(
+            path=folder / "spec.docx",
+            name="spec.docx",
+            extension=".docx",
+            size_bytes=110,
+            folder_path=folder,
+            file_kind="document",
+        ),
+        ScannedFile(
+            path=folder / "budget.xlsx",
+            name="budget.xlsx",
+            extension=".xlsx",
+            size_bytes=240,
+            folder_path=folder,
+            file_kind="document",
+        ),
+    ]
+
+    service = DriveManagementService(AppSettings())
+    service.scanner = _FakeScanner(files)
+    service.classifier = _FakeClassifierWithFolderAI()
+
+    destination_root = tmp_path / "organized"
+    plan = service.build_organization_plan(
+        source_root,
+        destination_root,
+        conservative_mode=False,
+        min_move_confidence=0.9,
+    )
+
+    assert len(plan) == 2
+    for entry in plan:
+        assert str(entry.destination).startswith(str(destination_root / "Projects/Acme"))
+        assert "Folder AI plan" in entry.recommendation.reason

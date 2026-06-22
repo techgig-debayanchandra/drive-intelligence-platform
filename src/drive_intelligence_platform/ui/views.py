@@ -255,13 +255,14 @@ def render_organize_drive(settings: AppSettings) -> None:
     conservative_mode = st.checkbox(
         "Conservative mode (preserve folder structure unless highly confident)",
         value=True,
+        disabled=True,
         key="organize_conservative_mode",
     )
     min_move_confidence = st.slider(
         "Minimum confidence to relocate files",
         min_value=0.50,
         max_value=0.99,
-        value=0.82,
+        value=0.90,
         step=0.01,
         key="organize_min_confidence",
     )

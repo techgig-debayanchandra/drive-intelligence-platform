@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from sqlalchemy.orm import Session
 
@@ -53,7 +54,7 @@ class DriveManagementService:
         destination_root: Path,
         progress_callback: Callable[[float, str], None] | None = None,
         conservative_mode: bool = True,
-        min_move_confidence: float = 0.82,
+        min_move_confidence: float = 0.90,
     ) -> list[OrganizationPlanEntry]:
         """Scan a source root and derive a move plan under a destination root."""
 
@@ -86,9 +87,11 @@ class DriveManagementService:
             grouped[scanned_item.folder_path].append((scanned_item, recommendation))
 
         for folder_path, items in grouped.items():
+            folder_ai_plan = self._folder_group_ai_plan(items)
             strategy = self._select_folder_strategy(
                 folder_path,
                 items,
+                folder_ai_plan=folder_ai_plan,
                 conservative_mode=conservative_mode,
                 min_move_confidence=min_move_confidence,
             )
@@ -113,7 +116,18 @@ class DriveManagementService:
                         min_confidence=0.88,
                     )
                 else:
-                    if recommendation.confidence < min_move_confidence or str(recommendation.suggested_folder).lower().endswith("unsorted"):
+                    ai_suggested_folder = self._folder_ai_target(folder_ai_plan)
+                    ai_reason = str(folder_ai_plan.get("reason", "Folder-level AI plan")) if folder_ai_plan else "Folder-level AI plan"
+                    ai_confidence = float(folder_ai_plan.get("confidence", 0.0)) if folder_ai_plan else 0.0
+                    if ai_suggested_folder is not None and ai_confidence >= min_move_confidence:
+                        destination = destination_root / ai_suggested_folder / scanned_item.name
+                        enriched = self._recommend_with_reason(
+                            recommendation,
+                            suggested_folder=ai_suggested_folder,
+                            reason_prefix=f"Folder AI plan ({ai_reason})",
+                            min_confidence=ai_confidence,
+                        )
+                    elif recommendation.confidence < min_move_confidence or str(recommendation.suggested_folder).lower().endswith("unsorted"):
                         destination = destination_root / relative_parent / scanned_item.name
                         enriched = self._recommend_with_reason(
                             recommendation,
@@ -135,6 +149,7 @@ class DriveManagementService:
         self,
         folder_path: Path,
         items: list[tuple[ScannedFile, RecommendationPayload]],
+        folder_ai_plan: dict[str, object] | None,
         conservative_mode: bool,
         min_move_confidence: float,
     ) -> str:
@@ -182,8 +197,49 @@ class DriveManagementService:
             return "preserve_folder"
         if conservative_mode and file_count >= 2 and avg_confidence < 0.92:
             return "preserve_folder"
+        if folder_ai_plan is not None and bool(folder_ai_plan.get("preserve_folder", False)):
+            return "preserve_folder"
 
         return "default"
+
+    def _folder_group_ai_plan(
+        self,
+        items: list[tuple[ScannedFile, RecommendationPayload]],
+    ) -> dict[str, object] | None:
+        """Call AI once for a folder group to improve contextual planning."""
+
+        ai_service = getattr(self.classifier, "ai_service", None)
+        if ai_service is None or not hasattr(ai_service, "recommend_folder_group"):
+            return None
+
+        files = [scanned for scanned, _ in items]
+        context = {
+            "heuristic_summary": {
+                "avg_confidence": sum(rec.confidence for _, rec in items) / len(items),
+                "top_suggested": [str(rec.suggested_folder) for _, rec in items[:8]],
+            }
+        }
+        try:
+            planner = cast(object, ai_service)
+            response = planner.recommend_folder_group(files, context)  # type: ignore[attr-defined]
+            if isinstance(response, dict):
+                return response
+        except Exception:
+            return None
+        return None
+
+    def _folder_ai_target(self, folder_ai_plan: dict[str, object] | None) -> Path | None:
+        """Extract a safe folder target from folder-level AI plan."""
+
+        if not folder_ai_plan:
+            return None
+        suggested = folder_ai_plan.get("suggested_folder")
+        if not suggested:
+            return None
+        folder = Path(str(suggested))
+        if str(folder).strip() == "":
+            return None
+        return folder
 
     def _relative_folder(self, folder_path: Path, source_root: Path) -> Path:
         """Return a stable relative folder under source root."""
