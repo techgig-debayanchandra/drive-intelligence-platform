@@ -70,12 +70,23 @@ class DriveManagementService:
                 label = f"{label} - {current_path}"
             progress_callback(ratio, label)
 
-        scan_result = self.scanner.scan([source_root], progress_callback=scan_progress if progress_callback else None)
+        try:
+            scan_result = self.scanner.scan(
+                [source_root],
+                progress_callback=scan_progress if progress_callback else None,
+                compute_hashes=False,
+            )
+        except TypeError:
+            scan_result = self.scanner.scan([source_root], progress_callback=scan_progress if progress_callback else None)
+        use_file_level_ai = len(scan_result.files) <= self.settings.max_file_level_ai_items
         plan: list[OrganizationPlanEntry] = []
         classified_items: list[tuple[ScannedFile, RecommendationPayload]] = []
         total_files = len(scan_result.files)
         for index, scanned_item in enumerate(scan_result.files, start=1):
-            recommendation = self.classifier.classify(scanned_item)
+            try:
+                recommendation = self.classifier.classify(scanned_item, allow_ai=use_file_level_ai)
+            except TypeError:
+                recommendation = self.classifier.classify(scanned_item)
             classified_items.append((scanned_item, recommendation))
 
             if progress_callback is not None:
@@ -313,7 +324,10 @@ class DriveManagementService:
     def planned_recommendations(self, source_root: Path, target_root: Path) -> list[tuple[ScannedFile, RecommendationPayload]]:
         """Return scan/classification pairs for UI previews."""
 
-        scan_result = self.scanner.scan([source_root])
+        try:
+            scan_result = self.scanner.scan([source_root], compute_hashes=False)
+        except TypeError:
+            scan_result = self.scanner.scan([source_root])
         preview: list[tuple[ScannedFile, RecommendationPayload]] = []
         for scanned_item in scan_result.files:
             recommendation = self.classifier.classify(scanned_item)

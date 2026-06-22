@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
 from urllib import error, request
@@ -11,6 +12,29 @@ from openai import OpenAI
 
 from drive_intelligence_platform.core.config import AppSettings
 from drive_intelligence_platform.schemas import RecommendationPayload, ScannedFile
+
+
+def _json_safe(value: object) -> object:
+    """Recursively convert objects into JSON-serializable primitives."""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+
+    # Handles numeric-like objects such as PIL IFDRational.
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 class RecommendationServiceProtocol(Protocol):
@@ -120,7 +144,7 @@ class OpenAIRecommendationService:
                     "file_kind": file_item.file_kind,
                     "size_bytes": file_item.size_bytes,
                 },
-                "context": context,
+                "context": _json_safe(context),
                 "required_output": {
                     "category": "string",
                     "subcategory": "string",
@@ -144,7 +168,7 @@ class OpenAIRecommendationService:
                     "extensions": sorted({item.extension for item in files}),
                     "sample_files": [item.name for item in files[:25]],
                 },
-                "context": context,
+                "context": _json_safe(context),
                 "required_output": {
                     "preserve_folder": "boolean",
                     "suggested_folder": "string",
@@ -227,7 +251,7 @@ class OllamaRecommendationService:
                     "file_kind": file_item.file_kind,
                     "size_bytes": file_item.size_bytes,
                 },
-                "context": context,
+                "context": _json_safe(context),
                 "constraints": [
                     "Preserve folder coherence for mixed project folders.",
                     "Do not scatter related files unless confidence is very high.",
@@ -257,7 +281,7 @@ class OllamaRecommendationService:
                     "extensions": sorted({item.extension for item in files}),
                     "sample_files": [item.name for item in files[:25]],
                 },
-                "context": context,
+                "context": _json_safe(context),
                 "constraints": [
                     "Preserve coherent project/album folders by default.",
                     "Avoid scattering mixed-content folders.",

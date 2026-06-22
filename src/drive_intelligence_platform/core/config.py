@@ -29,6 +29,7 @@ class AppSettings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:14b-instruct"
     ai_request_timeout_s: float = 45.0
+    max_file_level_ai_items: int = 3000
     ui_bootstrap_cdn: bool = True
     ui_max_table_rows: int = 500
 

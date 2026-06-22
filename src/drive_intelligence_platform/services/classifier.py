@@ -20,11 +20,11 @@ class ClassifierService:
         self.settings = settings
         self.ai_service = ai_service if ai_service is not None else create_ai_recommendation_service(settings)
 
-    def classify(self, file_item: ScannedFile) -> RecommendationPayload:
+    def classify(self, file_item: ScannedFile, allow_ai: bool = True) -> RecommendationPayload:
         """Classify a scanned file into a category and suggested folder."""
 
         heuristic = self._heuristic_recommendation(file_item)
-        if heuristic.confidence >= self.settings.similarity_threshold or self.ai_service is None:
+        if not allow_ai or heuristic.confidence >= self.settings.similarity_threshold or self.ai_service is None:
             return heuristic
 
         ai_context = self._build_ai_context(file_item, heuristic)

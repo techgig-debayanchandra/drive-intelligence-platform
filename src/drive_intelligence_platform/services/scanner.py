@@ -34,6 +34,7 @@ class DriveScanner:
         self,
         roots: Iterable[Path],
         progress_callback: Callable[[int, int, Path | None], None] | None = None,
+        compute_hashes: bool = True,
     ) -> ScanResult:
         """Scan directories and compute hashes for discovered files."""
 
@@ -49,7 +50,7 @@ class DriveScanner:
         total_bytes = 0
         files: list[ScannedFile] = []
         with futures.ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            future_map = {pool.submit(self._inspect_file, path): path for path in discovered}
+            future_map = {pool.submit(self._inspect_file, path, compute_hashes): path for path in discovered}
             completed = 0
             for future in futures.as_completed(future_map):
                 item = future.result()
@@ -66,19 +67,43 @@ class DriveScanner:
         """Collect files beneath a root path."""
 
         result: list[Path] = []
-        for current_root, _, filenames in os.walk(root):
+        skip_dirs = {
+            ".git",
+            ".svn",
+            ".hg",
+            ".Trash",
+            ".Trashes",
+            ".Spotlight-V100",
+            ".fseventsd",
+            "$RECYCLE.BIN",
+            "System Volume Information",
+            "node_modules",
+            "__pycache__",
+        }
+        for current_root, dirnames, filenames in os.walk(root):
+            dirnames[:] = [
+                name
+                for name in dirnames
+                if name not in skip_dirs and not name.startswith(".")
+            ]
             for filename in filenames:
+                if filename in {".DS_Store", "Thumbs.db"}:
+                    continue
+                if filename.startswith("._"):
+                    continue
                 result.append(Path(current_root) / filename)
         return result
 
-    def _inspect_file(self, path: Path) -> ScannedFile | None:
+    def _inspect_file(self, path: Path, compute_hashes: bool = True) -> ScannedFile | None:
         """Inspect a single file and compute lightweight metadata."""
 
         try:
             stat_result = path.stat()
             mime_type, _ = mimetypes.guess_type(path.name)
-            sha256 = self._hash(path, hashlib.sha256())
-            md5 = self._hash(path, hashlib.md5())
+            sha256: str | None = None
+            md5: str | None = None
+            if compute_hashes:
+                sha256, md5 = self._hash_pair(path)
             return ScannedFile(
                 path=path,
                 name=path.name,
@@ -97,6 +122,17 @@ class DriveScanner:
         except OSError as exc:
             logger.warning("failed_to_inspect_file", path=str(path), error=str(exc))
             return None
+
+    def _hash_pair(self, path: Path) -> tuple[str, str]:
+        """Compute SHA256 and MD5 in one file read pass."""
+
+        sha256 = hashlib.sha256()
+        md5 = hashlib.md5()
+        with path.open("rb") as file_handle:
+            for chunk in iter(lambda: file_handle.read(1024 * 1024), b""):
+                sha256.update(chunk)
+                md5.update(chunk)
+        return sha256.hexdigest(), md5.hexdigest()
 
     def _hash(self, path: Path, hasher: "hashlib._Hash") -> str:
         """Hash a file in chunks."""
