@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import tarfile
 import zipfile
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,8 @@ class DriveManagementService:
         source_root: Path,
         destination_root: Path,
         progress_callback: Callable[[float, str], None] | None = None,
+        conservative_mode: bool = True,
+        min_move_confidence: float = 0.82,
     ) -> list[OrganizationPlanEntry]:
         """Scan a source root and derive a move plan under a destination root."""
 
@@ -68,19 +71,146 @@ class DriveManagementService:
 
         scan_result = self.scanner.scan([source_root], progress_callback=scan_progress if progress_callback else None)
         plan: list[OrganizationPlanEntry] = []
+        classified_items: list[tuple[ScannedFile, RecommendationPayload]] = []
         total_files = len(scan_result.files)
         for index, scanned_item in enumerate(scan_result.files, start=1):
             recommendation = self.classifier.classify(scanned_item)
-            destination = destination_root / recommendation.suggested_folder / scanned_item.name
-            plan.append(OrganizationPlanEntry(source=scanned_item.path, destination=destination, recommendation=recommendation))
+            classified_items.append((scanned_item, recommendation))
 
             if progress_callback is not None:
                 ratio = 0.5 + (0.5 * (index / total_files)) if total_files else 1.0
                 progress_callback(ratio, f"Classifying {index}/{total_files} files - {scanned_item.path}")
 
+        grouped: dict[Path, list[tuple[ScannedFile, RecommendationPayload]]] = defaultdict(list)
+        for scanned_item, recommendation in classified_items:
+            grouped[scanned_item.folder_path].append((scanned_item, recommendation))
+
+        for folder_path, items in grouped.items():
+            strategy = self._select_folder_strategy(
+                folder_path,
+                items,
+                conservative_mode=conservative_mode,
+                min_move_confidence=min_move_confidence,
+            )
+            relative_parent = self._relative_folder(folder_path, source_root)
+
+            for scanned_item, recommendation in items:
+                if strategy == "preserve_folder":
+                    destination = destination_root / relative_parent / scanned_item.name
+                    enriched = self._recommend_with_reason(
+                        recommendation,
+                        suggested_folder=relative_parent,
+                        reason_prefix="Preserved folder context",
+                        min_confidence=0.85,
+                    )
+                elif strategy == "photo_album":
+                    suggested = Path("Photos") / relative_parent
+                    destination = destination_root / suggested / scanned_item.name
+                    enriched = self._recommend_with_reason(
+                        recommendation,
+                        suggested_folder=suggested,
+                        reason_prefix="Grouped as photo album",
+                        min_confidence=0.88,
+                    )
+                else:
+                    if recommendation.confidence < min_move_confidence or str(recommendation.suggested_folder).lower().endswith("unsorted"):
+                        destination = destination_root / relative_parent / scanned_item.name
+                        enriched = self._recommend_with_reason(
+                            recommendation,
+                            suggested_folder=relative_parent,
+                            reason_prefix="Preserved for low-confidence safety",
+                            min_confidence=recommendation.confidence,
+                        )
+                    else:
+                        destination = destination_root / recommendation.suggested_folder / scanned_item.name
+                        enriched = recommendation
+
+                plan.append(OrganizationPlanEntry(source=scanned_item.path, destination=destination, recommendation=enriched))
+
         if progress_callback is not None:
             progress_callback(1.0, f"Built organization plan for {len(plan)} files")
         return plan
+
+    def _select_folder_strategy(
+        self,
+        folder_path: Path,
+        items: list[tuple[ScannedFile, RecommendationPayload]],
+        conservative_mode: bool,
+        min_move_confidence: float,
+    ) -> str:
+        """Choose a safe folder-level strategy to avoid random file scattering."""
+
+        file_count = len(items)
+        if file_count == 0:
+            return "default"
+
+        kinds = {scanned.file_kind for scanned, _ in items}
+        extensions = {scanned.extension for scanned, _ in items}
+        avg_confidence = sum(rec.confidence for _, rec in items) / file_count
+        suggested_counter = Counter(str(rec.suggested_folder) for _, rec in items)
+        dominant_ratio = suggested_counter.most_common(1)[0][1] / file_count
+        photo_ratio = sum(1 for scanned, _ in items if scanned.file_kind == "photo") / file_count
+
+        folder_name = folder_path.name.lower()
+        semantic_folder_keywords = {
+            "project",
+            "client",
+            "finance",
+            "tax",
+            "invoice",
+            "contract",
+            "research",
+            "thesis",
+            "family",
+            "wedding",
+            "trip",
+        }
+
+        if photo_ratio >= 0.8 and file_count >= 5:
+            return "photo_album"
+
+        # Preserve mixed-content folders so related files stay together.
+        if len(kinds) >= 2 and file_count >= 3:
+            return "preserve_folder"
+        if len(extensions) >= 4 and file_count >= 4:
+            return "preserve_folder"
+        if avg_confidence < min_move_confidence:
+            return "preserve_folder"
+        if dominant_ratio < 0.6 and file_count >= 3:
+            return "preserve_folder"
+        if any(token in folder_name for token in semantic_folder_keywords) and file_count >= 2:
+            return "preserve_folder"
+        if conservative_mode and file_count >= 2 and avg_confidence < 0.92:
+            return "preserve_folder"
+
+        return "default"
+
+    def _relative_folder(self, folder_path: Path, source_root: Path) -> Path:
+        """Return a stable relative folder under source root."""
+
+        try:
+            relative = folder_path.relative_to(source_root)
+            return relative if str(relative) != "." else Path("Root")
+        except ValueError:
+            return Path(folder_path.name or "Root")
+
+    def _recommend_with_reason(
+        self,
+        recommendation: RecommendationPayload,
+        suggested_folder: Path,
+        reason_prefix: str,
+        min_confidence: float,
+    ) -> RecommendationPayload:
+        """Create a contextual recommendation while preserving original rationale."""
+
+        return RecommendationPayload(
+            source_path=recommendation.source_path,
+            category=recommendation.category,
+            subcategory=recommendation.subcategory,
+            suggested_folder=suggested_folder,
+            reason=f"{reason_prefix}: {recommendation.reason}",
+            confidence=max(recommendation.confidence, min_confidence),
+        )
 
     def execute_organization_plan(self, plan: list[OrganizationPlanEntry], approved: bool) -> list[OperationManifest]:
         """Execute approved file moves and persist manifests."""

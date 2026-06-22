@@ -243,6 +243,28 @@ def render_organize_drive(settings: AppSettings) -> None:
         "</div>",
         unsafe_allow_html=True,
     )
+    provider_label = settings.ai_provider.lower()
+    if provider_label == "ollama":
+        st.info(f"AI provider: Ollama ({settings.ollama_model} @ {settings.ollama_base_url})")
+    elif provider_label == "openai":
+        state = "configured" if settings.openai_api_key else "not configured"
+        st.info(f"AI provider: OpenAI ({state}, model={settings.openai_model})")
+    else:
+        st.info("AI provider: disabled")
+
+    conservative_mode = st.checkbox(
+        "Conservative mode (preserve folder structure unless highly confident)",
+        value=True,
+        key="organize_conservative_mode",
+    )
+    min_move_confidence = st.slider(
+        "Minimum confidence to relocate files",
+        min_value=0.50,
+        max_value=0.99,
+        value=0.82,
+        step=0.01,
+        key="organize_min_confidence",
+    )
     source_root = Path(st.text_input("Source root", value=str(Path.home()), key="organize_source"))
     destination_root = Path(st.text_input("Destination root", value=str(Path.home() / "Drive-Organized"), key="organize_dest"))
     if st.button("Build organization plan", key="build_organization_plan"):
@@ -262,6 +284,8 @@ def render_organize_drive(settings: AppSettings) -> None:
                 source_root,
                 destination_root,
                 progress_callback=update_plan_progress,
+                conservative_mode=conservative_mode,
+                min_move_confidence=min_move_confidence,
             )
             progress_bar.progress(1.0, text=f"Built organization plan for {len(plan)} files")
             progress_box.caption(f"Plan ready: {len(plan)} files from {source_root}")
@@ -271,6 +295,12 @@ def render_organize_drive(settings: AppSettings) -> None:
     plan = st.session_state.get("organization_plan", [])
     if plan:
         _render_organization_visuals(plan)
+        preserved_count = sum(1 for item in plan if "Preserved" in item.recommendation.reason)
+        relocated_count = len(plan) - preserved_count
+        st.info(
+            f"Plan summary: {preserved_count} preserved in-place context moves, "
+            f"{relocated_count} targeted relocations."
+        )
         visible_rows = st.slider(
             "Rows to display",
             min_value=50,

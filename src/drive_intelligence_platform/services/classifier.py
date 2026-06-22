@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from drive_intelligence_platform.core.config import AppSettings
-from drive_intelligence_platform.services.ai import OpenAIRecommendationService
+from drive_intelligence_platform.services.ai import RecommendationServiceProtocol, create_ai_recommendation_service
 from drive_intelligence_platform.services.content_analysis import ContentAnalyzer
 from drive_intelligence_platform.services.photo_analysis import PhotoAnalyzer
 from drive_intelligence_platform.services.video_analysis import VideoAnalyzer
@@ -15,9 +15,9 @@ from drive_intelligence_platform.schemas import RecommendationPayload, ScannedFi
 class ClassifierService:
     """Generate organization recommendations from metadata and learned patterns."""
 
-    def __init__(self, settings: AppSettings, ai_service: OpenAIRecommendationService | None = None) -> None:
+    def __init__(self, settings: AppSettings, ai_service: RecommendationServiceProtocol | None = None) -> None:
         self.settings = settings
-        self.ai_service = ai_service if ai_service is not None else OpenAIRecommendationService.from_settings(settings)
+        self.ai_service = ai_service if ai_service is not None else create_ai_recommendation_service(settings)
 
     def classify(self, file_item: ScannedFile) -> RecommendationPayload:
         """Classify a scanned file into a category and suggested folder."""

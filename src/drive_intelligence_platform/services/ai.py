@@ -1,14 +1,34 @@
-"""OpenAI-backed recommendation generation."""
+"""AI-backed recommendation generation across multiple providers."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Protocol
+from urllib import error, request
 
 from openai import OpenAI
 
 from drive_intelligence_platform.core.config import AppSettings
 from drive_intelligence_platform.schemas import RecommendationPayload, ScannedFile
+
+
+class RecommendationServiceProtocol(Protocol):
+    """Protocol for AI recommendation providers."""
+
+    def recommend(self, file_item: ScannedFile, context: dict[str, object]) -> RecommendationPayload | None:
+        """Return a structured recommendation or ``None`` when unavailable."""
+
+
+def create_ai_recommendation_service(settings: AppSettings) -> RecommendationServiceProtocol | None:
+    """Build the configured AI recommendation provider."""
+
+    provider = settings.ai_provider.lower()
+    if provider == "disabled":
+        return None
+    if provider == "ollama":
+        return OllamaRecommendationService.from_settings(settings)
+    return OpenAIRecommendationService.from_settings(settings)
 
 
 class OpenAIRecommendationService:
@@ -80,6 +100,85 @@ class OpenAIRecommendationService:
                     "size_bytes": file_item.size_bytes,
                 },
                 "context": context,
+                "required_output": {
+                    "category": "string",
+                    "subcategory": "string",
+                    "suggested_folder": "string",
+                    "reason": "string",
+                    "confidence": "number between 0 and 1",
+                },
+            },
+            indent=2,
+        )
+
+
+class OllamaRecommendationService:
+    """Generate organization recommendations with a local Ollama model."""
+
+    def __init__(self, settings: AppSettings, api_url: str, timeout_seconds: float = 45.0) -> None:
+        self.settings = settings
+        self.api_url = api_url
+        self.timeout_seconds = timeout_seconds
+
+    @classmethod
+    def from_settings(cls, settings: AppSettings) -> "OllamaRecommendationService":
+        """Create an Ollama provider using configured endpoint/model."""
+
+        base_url = settings.ollama_base_url.rstrip("/")
+        return cls(settings, api_url=f"{base_url}/api/generate", timeout_seconds=settings.ai_request_timeout_s)
+
+    def recommend(self, file_item: ScannedFile, context: dict[str, object]) -> RecommendationPayload | None:
+        """Query Ollama and parse a JSON recommendation."""
+
+        payload = {
+            "model": self.settings.ollama_model,
+            "stream": False,
+            "format": "json",
+            "prompt": self._build_prompt(file_item, context),
+            "options": {"temperature": 0.1},
+        }
+        req = request.Request(
+            self.api_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            content = data.get("response", "{}")
+            model_payload = json.loads(content)
+            return RecommendationPayload(
+                source_path=file_item.path,
+                category=str(model_payload.get("category", "Unsorted")),
+                subcategory=str(model_payload.get("subcategory", "")),
+                suggested_folder=Path(str(model_payload.get("suggested_folder", "Archives/Unsorted"))),
+                reason=str(model_payload.get("reason", "Ollama recommendation")),
+                confidence=float(model_payload.get("confidence", 0.5)),
+            )
+        except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
+            return None
+
+    def _build_prompt(self, file_item: ScannedFile, context: dict[str, object]) -> str:
+        """Build a strict JSON-only recommendation prompt for Ollama."""
+
+        return json.dumps(
+            {
+                "task": "You are a file-organization agent. Output only valid JSON.",
+                "file": {
+                    "path": str(file_item.path),
+                    "name": file_item.name,
+                    "extension": file_item.extension,
+                    "folder_path": str(file_item.folder_path),
+                    "file_kind": file_item.file_kind,
+                    "size_bytes": file_item.size_bytes,
+                },
+                "context": context,
+                "constraints": [
+                    "Preserve folder coherence for mixed project folders.",
+                    "Do not scatter related files unless confidence is very high.",
+                    "Prefer conservative organization with clear rationale.",
+                ],
                 "required_output": {
                     "category": "string",
                     "subcategory": "string",

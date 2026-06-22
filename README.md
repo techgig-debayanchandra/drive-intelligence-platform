@@ -38,3 +38,36 @@ The platform supports three modes:
 3. Approved Execution Mode
 
 Execution mode requires explicit user approval before any file operation is performed.
+
+## AI Provider Configuration
+
+The planner supports multiple AI providers selected with environment variables.
+
+### 1) Use Ollama (local, no API billing)
+
+```bash
+export DIP_AI_PROVIDER=ollama
+export DIP_OLLAMA_BASE_URL=http://localhost:11434
+export DIP_OLLAMA_MODEL=qwen2.5:14b-instruct
+```
+
+Install/run Ollama model:
+
+```bash
+ollama pull qwen2.5:14b-instruct
+ollama serve
+```
+
+### 2) Use OpenAI
+
+```bash
+export DIP_AI_PROVIDER=openai
+export DIP_OPENAI_API_KEY=your_key_here
+export DIP_OPENAI_MODEL=gpt-4.1-mini
+```
+
+### 3) Disable AI
+
+```bash
+export DIP_AI_PROVIDER=disabled
+```
