@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Compressor & Framer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; padding: 2rem; max-width: 720px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 1.5rem; }
+.section { background: white; border-radius: 14px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.section-title { font-size: 11px; font-weight: 600; color: #86868b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1rem; }
+.drop-zone { border: 2px dashed #c7c7cc; border-radius: 12px; padding: 2.5rem 1rem; text-align: center; cursor: pointer; transition: background 0.15s; position: relative; }
+.drop-zone:hover, .drop-zone.drag-over { background: #f0f0f5; border-color: #007aff; }
+.drop-zone .big { font-size: 16px; font-weight: 600; margin-top: 10px; }
+.drop-zone .sub { font-size: 13px; color: #86868b; margin-top: 5px; }
+.row { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+.row label { font-size: 14px; color: #3a3a3c; min-width: 140px; }
+.row input[type=range] { flex: 1; accent-color: #007aff; }
+.row .val { font-size: 14px; font-weight: 600; min-width: 50px; text-align: right; color: #007aff; }
+.row select { flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid #d1d1d6; font-size: 14px; background: white; }
+.folder-tree { margin-top: 12px; max-height: 180px; overflow-y: auto; }
+.folder-node { font-size: 13px; padding: 4px 0; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #f2f2f7; }
+.badge { font-size: 11px; color: #007aff; background: #e8f0fe; padding: 1px 8px; border-radius: 20px; margin-left: auto; }
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.sw { width: 40px; height: 22px; appearance: none; background: #d1d1d6; border-radius: 11px; position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+.sw:checked { background: #007aff; }
+.sw::after { content: ''; position: absolute; width: 16px; height: 16px; background: white; border-radius: 50%; top: 3px; left: 3px; transition: left 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+.sw:checked::after { left: 21px; }
+.hidden { display: none; }
+.color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.swatch { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+.swatch.sel { border-color: #007aff; transform: scale(1.2); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+.stat { background: #f5f5f7; border-radius: 10px; padding: 12px; text-align: center; }
+.stat-label { font-size: 11px; color: #86868b; margin-bottom: 4px; }
+.stat-val { font-size: 20px; font-weight: 700; color: #1d1d1f; }
+.progress-bar { height: 8px; background: #e5e5ea; border-radius: 4px; overflow: hidden; margin-top: 12px; }
+.progress-fill { height: 100%; background: #007aff; border-radius: 4px; transition: width 0.2s; }
+.log { max-height: 160px; overflow-y: auto; background: #1c1c1e; border-radius: 10px; padding: 10px 12px; font-size: 12px; font-family: 'SF Mono', monospace; color: #8e8e93; margin-top: 12px; }
+.log .ok { color: #30d158; }
+.log .sk { color: #ff9f0a; }
+.log .info { color: #64d2ff; }
+.btn { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s, transform 0.1s; }
+.btn:active { transform: scale(0.97); }
+.btn-blue { background: #007aff; color: white; }
+.btn-blue:hover { opacity: 0.85; }
+.btn-blue:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-green { background: #30d158; color: white; font-size: 16px; padding: 14px 44px; border-radius: 12px; }
+.btn-green:hover { opacity: 0.85; }
+.zip-box { margin-top: 16px; background: #f0faf4; border: 2px solid #30d158; border-radius: 14px; padding: 24px; text-align: center; }
+.zip-title { font-size: 20px; font-weight: 700; color: #1d1d1f; margin-bottom: 8px; }
+.zip-sub { font-size: 13px; color: #3a3a3c; margin-bottom: 20px; line-height: 1.6; }
+.zip-size { font-size: 12px; color: #86868b; margin-top: 12px; }
+</style>
+</head>
+<body>
+<h1>📸 Photo Compressor & Framer</h1>
+
+<div class="section">
+  <div class="section-title">📁 Step 1 — Drop your parent folder</div>
+  <div class="drop-zone" id="drop-zone">
+    <div style="font-size:40px">🗂️</div>
+    <div class="big">Drag your parent folder here</div>
+    <div class="sub">All subfolders auto-detected · Mac junk files (._) ignored</div>
+    <input type="file" id="file-input" webkitdirectory mozdirectory multiple accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer">
+  </div>
+  <div class="folder-tree" id="folder-tree"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">⚙️ Step 2 — Compression settings</div>
+  <div class="row">
+    <label>Quality</label>
+    <input type="range" id="quality" min="50" max="95" value="82" step="1">
+    <span class="val" id="q-val">82%</span>
+  </div>
+  <div class="row">
+    <label>Max long edge</label>
+    <select id="max-px">
+      <option value="1080">1080px — social media</option>
+      <option value="2048" selected>2048px — high quality ✓</option>
+      <option value="3000">3000px — print</option>
+      <option value="0">Keep original size</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>Target max file size</label>
+    <select id="target-mb">
+      <option value="5">Under 5 MB</option>
+      <option value="8" selected>Under 8 MB — Instagram ✓</option>
+      <option value="15">Under 15 MB — Facebook</option>
+      <option value="0">No limit</option>
+    </select>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">🖼️ Step 3 — Frame / Border (optional)</div>
+  <div class="toggle-row">
+    <input type="checkbox" class="sw" id="frame-on">
+    <span style="font-size:14px;font-weight:500">Add frame to all photos</span>
+  </div>
+  <div id="frame-opts" class="hidden">
+    <div class="row">
+      <label>Frame style</label>
+      <select id="frame-style">
+        <option value="simple">Simple border</option>
+        <option value="double">Double border</option>
+        <option value="polaroid">Polaroid (white bottom)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Thickness</label>
+      <input type="range" id="frame-px" min="5" max="120" value="20" step="1">
+      <span class="val" id="fpx-val">20px</span>
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <label style="padding-top:4px">Color</label>
+      <div>
+        <div class="color-row" id="swatches">
+          <div class="swatch sel" style="background:#FFFFFF" data-c="#FFFFFF"></div>
+          <div class="swatch" style="background:#000000" data-c="#000000"></div>
+          <div class="swatch" style="background:#F5F0E8" data-c="#F5F0E8"></div>
+          <div class="swatch" style="background:#C8A96E" data-c="#C8A96E"></div>
+          <div class="swatch" style="background:#2C4A6E" data-c="#2C4A6E"></div>
+          <div class="swatch" style="background:#8B3A3A" data-c="#8B3A3A"></div>
+          <div class="swatch" style="background:#3A6B3A" data-c="#3A6B3A"></div>
+          <div class="swatch" style="background:#1A1A2E" data-c="#1A1A2E"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <span style="font-size:13px;color:#86868b">Custom:</span>
+          <input type="color" id="custom-color" value="#FFFFFF" style="width:34px;height:34px;padding:0;border:none;cursor:pointer;border-radius:6px">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">🚀 Step 4 — Process & Download</div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-blue" id="process-btn" disabled>Process all photos</button>
+    <span style="font-size:13px;color:#86868b" id="count-pill">No folder loaded</span>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="prog" style="width:0%"></div></div>
+  <div class="stats hidden" id="stats">
+    <div class="stat"><div class="stat-label">Done</div><div class="stat-val" id="s-done">0</div></div>
+    <div class="stat"><div class="stat-label">Original</div><div class="stat-val" id="s-orig">—</div></div>
+    <div class="stat"><div class="stat-label">Compressed</div><div class="stat-val" id="s-new">—</div></div>
+    <div class="stat"><div class="stat-label">Saved</div><div class="stat-val" id="s-saved">—</div></div>
+  </div>
+  <div class="log hidden" id="log"></div>
+  <div class="zip-box hidden" id="zip-box">
+    <div class="zip-title">✅ ZIP Ready!</div>
+    <div class="zip-sub">All photos compressed · folder structure preserved inside ZIP.<br>Click below to save to your Mac.</div>
+    <button class="btn btn-green" id="dl-btn">⬇️ Download ZIP</button>
+    <div class="zip-size" id="zip-info"></div>
+  </div>
+</div>
+
+<script>
+let allFiles = [], processed = [], frameColor = '#FFFFFF', zipBlob = null;
+
+const isJunk = n => n.startsWith('._') || n.startsWith('.') || ['Thumbs.db','desktop.ini'].includes(n);
+const isImage = f => f.type.startsWith('image/') && !isJunk(f.name);
+
+document.getElementById('file-input').addEventListener('change', e => loadFiles(e.target.files));
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const promises = [];
+  for (const item of e.dataTransfer.items) {
+    const entry = item.webkitGetAsEntry?.();
+    if (entry) promises.push(readEntry(entry, ''));
+  }
+  Promise.all(promises).then(r => {
+    allFiles = r.flat(Infinity).filter(f => f && isImage(f.file));
+    renderTree(); updateCount();
+  });
+});
+
+function readEntry(entry, path) {
+  return new Promise(res => {
+    if (entry.isFile) {
+      entry.file(f => res(isJunk(f.name) ? [] : [{ file: f, path }]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readAll = acc => reader.readEntries(entries => {
+        if (!entries.length)
+          Promise.all(acc.map(e => readEntry(e, path + entry.name + '/'))).then(r => res(r.flat(Infinity)));
+        else readAll([...acc, ...entries]);
+      });
+      readAll([]);
+    } else res([]);
+  });
+}
+
+function loadFiles(list) {
+  allFiles = Array.from(list).filter(isImage).map(f => {
+    const parts = (f.webkitRelativePath || f.name).split('/');
+    const path = parts.length > 1 ? parts.slice(0,-1).join('/') + '/' : '';
+    return { file: f, path };
+  });
+  renderTree(); updateCount();
+}
+
+function renderTree() {
+  const el = document.getElementById('folder-tree');
+  if (!allFiles.length) { el.innerHTML = ''; return; }
+  const folders = {};
+  allFiles.forEach(({ path }) => { const k = path||'(root)'; folders[k]=(folders[k]||0)+1; });
+  el.innerHTML = '<div style="margin-top:10px">' +
+    Object.entries(folders).map(([f,n]) =>
+      `<div class="folder-node">📁 <span>${f}</span><span class="badge">${n} photos</span></div>`
+    ).join('') + '</div>';
+}
+
+function updateCount() {
+  const f = new Set(allFiles.map(x => x.path)).size;
+  document.getElementById('count-pill').textContent = `${allFiles.length} photos in ${f} folder(s)`;
+  document.getElementById('process-btn').disabled = !allFiles.length;
+}
+
+document.getElementById('quality').addEventListener('input', e => document.getElementById('q-val').textContent = e.target.value+'%');
+document.getElementById('frame-px').addEventListener('input', e => document.getElementById('fpx-val').textContent = e.target.value+'px');
+document.getElementById('frame-on').addEventListener('change', e => document.getElementById('frame-opts').classList.toggle('hidden', !e.target.checked));
+document.querySelectorAll('.swatch').forEach(s => s.addEventListener('click', () => {
+  document.querySelectorAll('.swatch').forEach(x => x.classList.remove('sel'));
+  s.classList.add('sel'); frameColor = s.dataset.c;
+  document.getElementById('custom-color').value = frameColor;
+}));
+document.getElementById('custom-color').addEventListener('input', e => {
+  frameColor = e.target.value;
+  document.querySelectorAll('.swatch').forEach(x => x.classList.remove('sel'));
+});
+
+// Convert canvas to Uint8Array via blob — reliable cross-browser
+function canvasToUint8Array(canvas, mime, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (!blob) { reject(new Error('toBlob failed')); return; }
+      const reader = new FileReader();
+      reader.onload = () => resolve(new Uint8Array(reader.result));
+      reader.onerror = () => reject(new Error('FileReader failed'));
+      reader.readAsArrayBuffer(blob);
+    }, mime, quality);
+  });
+}
+
+async function compressOne({ file, path }) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = async () => {
+      URL.revokeObjectURL(url);
+      try {
+        const quality = parseInt(document.getElementById('quality').value)/100;
+        const maxPx = parseInt(document.getElementById('max-px').value);
+        const targetMB = parseInt(document.getElementById('target-mb').value);
+        const useFrame = document.getElementById('frame-on').checked;
+        const fStyle = document.getElementById('frame-style').value;
+        const fPx = parseInt(document.getElementById('frame-px').value);
+
+        let W = img.width, H = img.height;
+        if (maxPx > 0) {
+          const long = Math.max(W,H);
+          if (long > maxPx) { const r=maxPx/long; W=Math.round(W*r); H=Math.round(H*r); }
+        }
+
+        let pL=0,pR=0,pT=0,pB=0;
+        if (useFrame) { pL=pR=pT=fPx; pB=fStyle==='polaroid'?Math.round(fPx*3):fPx; }
+
+        const cv = document.createElement('canvas');
+        cv.width=W+pL+pR; cv.height=H+pT+pB;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = useFrame ? frameColor : '#FFFFFF';
+        ctx.fillRect(0,0,cv.width,cv.height);
+        if (useFrame && fStyle==='double') {
+          const inn=Math.max(1,Math.round(fPx*0.3));
+          ctx.fillStyle='rgba(0,0,0,0.25)';
+          ctx.fillRect(fPx,fPx,W,inn); ctx.fillRect(fPx,fPx+H-inn,W,inn);
+          ctx.fillRect(fPx,fPx,inn,H); ctx.fillRect(fPx+W-inn,fPx,inn,H);
+        }
+        ctx.drawImage(img,pL,pT,W,H);
+
+        // Try reducing quality until under target
+        let q = quality;
+        let bytes;
+        while (true) {
+          bytes = await canvasToUint8Array(cv, 'image/jpeg', q);
+          if (targetMB === 0 || bytes.byteLength <= targetMB*1024*1024 || q <= 0.3) break;
+          q = parseFloat((q - 0.05).toFixed(2));
+        }
+
+        resolve({ bytes, path, name: file.name, origSize: file.size, newSize: bytes.byteLength });
+      } catch(e) { reject(e); }
+    };
+    img.onerror = () => reject(new Error('image load failed'));
+    img.src = url;
+  });
+}
+
+document.getElementById('process-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('process-btn');
+  btn.disabled=true; btn.textContent='Processing…';
+  processed=[];
+  zipBlob=null;
+  document.getElementById('log').innerHTML='';
+  document.getElementById('stats').classList.remove('hidden');
+  document.getElementById('zip-box').classList.add('hidden');
+  document.getElementById('prog').style.width='0%';
+
+  let origTotal=0, newTotal=0, done=0;
+
+  for (const item of allFiles) {
+    try {
+      const r = await compressOne(item);
+      processed.push(r);
+      origTotal += r.origSize;
+      newTotal += r.newSize;
+      done++;
+      document.getElementById('prog').style.width = Math.round(done/allFiles.length*100)+'%';
+      document.getElementById('s-done').textContent = done;
+      document.getElementById('s-orig').textContent = (origTotal/1024/1024).toFixed(1)+' MB';
+      document.getElementById('s-new').textContent = (newTotal/1024/1024).toFixed(1)+' MB';
+      document.getElementById('s-saved').textContent = Math.round((1-newTotal/origTotal)*100)+'%';
+      addLog('✓ '+(r.path||'')+r.name+' → '+(r.newSize/1024/1024).toFixed(2)+' MB', 'ok');
+    } catch(e) {
+      addLog('⚠ skipped: '+item.file.name+' ('+e.message+')', 'sk');
+    }
+  }
+
+  if (processed.length === 0) {
+    addLog('❌ No photos were processed successfully.', 'sk');
+    btn.disabled=false; btn.textContent='Process all photos';
+    return;
+  }
+
+  addLog('📦 Building ZIP with folder structure…', 'info');
+  const zip = new JSZip();
+  for (const r of processed) {
+    const fullPath = (r.path||'') + r.name.replace(/\.[^.]+$/, '') + '.jpg';
+    zip.file(fullPath, r.bytes, { binary: true });
+  }
+
+  zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+  addLog('✅ ZIP ready — '+processed.length+' photos, '+(zipBlob.size/1024/1024).toFixed(1)+' MB', 'ok');
+
+  document.getElementById('zip-info').textContent =
+    `ZIP: ${(zipBlob.size/1024/1024).toFixed(1)} MB · ${processed.length} photos · folder structure preserved`;
+  document.getElementById('zip-box').classList.remove('hidden');
+  document.getElementById('prog').style.width='100%';
+  btn.disabled=false; btn.textContent='Process all photos';
+});
+
+document.getElementById('dl-btn').addEventListener('click', () => {
+  if (!zipBlob) { alert('Please process photos first.'); return; }
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'photos_compressed.zip';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 3000);
+});
+
+function addLog(msg, cls) {
+  const el = document.getElementById('log');
+  el.classList.remove('hidden');
+  const d = document.createElement('div');
+  d.className = cls; d.textContent = msg;
+  el.appendChild(d); el.scrollTop = el.scrollHeight;
+}
+</script>
+</body>
+</html>

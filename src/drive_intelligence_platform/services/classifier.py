@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 from drive_intelligence_platform.core.config import AppSettings
@@ -74,13 +75,24 @@ class ClassifierService:
             return context
 
         if file_item.file_kind == "document":
-            context["analysis"] = ContentAnalyzer().analyze(file_item.path).__dict__
+            context["analysis"] = self._analysis_to_dict(ContentAnalyzer().analyze(file_item.path))
         elif file_item.file_kind == "photo":
-            context["analysis"] = PhotoAnalyzer().analyze(file_item.path).__dict__
+            context["analysis"] = self._analysis_to_dict(PhotoAnalyzer().analyze(file_item.path))
         elif file_item.file_kind == "video":
-            context["analysis"] = VideoAnalyzer().analyze(file_item.path).__dict__
+            context["analysis"] = self._analysis_to_dict(VideoAnalyzer().analyze(file_item.path))
 
         return context
+
+    def _analysis_to_dict(self, result: object) -> dict[str, object]:
+        if is_dataclass(result):
+            return asdict(result)
+        if hasattr(result, "model_dump"):
+            return result.model_dump()  # type: ignore[no-any-return]
+        if hasattr(result, "dict"):
+            return result.dict()  # type: ignore[no-any-return]
+        if hasattr(result, "__dict__"):
+            return vars(result)
+        return {"value": str(result)}
 
     def _recommend(
         self,
